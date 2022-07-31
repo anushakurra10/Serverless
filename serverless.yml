@@ -1,0 +1,147 @@
+# Welcome to Serverless!
+#
+# This file is the main config file for your service.
+# It's very minimal at this point and uses default values.
+# You can always add more config options for more control.
+# We've included some commented out config examples here.
+# Just uncomment any of them to get that config option.
+#
+# For full config options, check the docs:
+#    docs.serverless.com
+#
+# Happy Coding!
+
+service: cake-ordering-system
+
+# app and org for use with dashboard.serverless.com
+#app: your-app-name
+#org: your-org-name
+
+# You can pin your service to only deploy with a specific Serverless version
+# Check out our docs for more details
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:PutItem
+        - dynamodb:GetItem
+      Resource:
+        - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/ordersTable
+    - Effect: Allow
+      Action:
+        - kinesis:PutRecord
+      Resource:
+        - !Sub arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/order-events
+    - Effect: Allow
+      Action:
+        - "logs:CreateLogStream"
+        - "logs:CreateLogGroup"
+        - "logs:PutLogEvents"
+      Resource:
+        - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*
+    - Effect: Allow
+      Action:
+        - ses:SendEmail
+        - ses:SendRawEmail
+      Resource: 
+        - "*"
+    - Effect: Allow
+      Action:
+        - sqs:SendMessage
+      Resource: 
+        - !Sub arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:deliveryServiceQueue
+        - !Sub arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:customerServiceQueue
+
+functions:
+  createOrder:
+    handler: handler.createOrder
+    events:
+      - httpApi:
+          path: /order
+          method: post
+    Environment:
+      OrderTableName:  ordersTable
+      OrderStreamName: order-events
+  orderFulfillment:
+    handler: handler.orderFulfillment
+    events:
+      - httpApi:
+          path: /order/fulfill
+          method: post
+    Environment:
+      OrderTableName:  ordersTable
+      OrderStreamName: order-events
+  notifyExternalParties:
+    handler: handler.notifyExternalParties
+    events:
+      - stream:
+          type: kinesis
+          arn:
+            Fn::GetAtt: [ orderEventsStream, Arn ]
+    environment:
+      region: ${aws:region}
+      cakeProducerEmail: anushatraining10@gmail.com
+      deliveryCompanyQueue:
+        Ref: deliveryServiceQueue
+      OrderTableName: ordersTable
+  notifyDeliveryCompany:
+    handler: handler.notifyDeliveryCompany
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt:
+              - deliveryServiceQueue
+              - Arn
+          batchSize: 1
+  orderDelivered:
+    handler: handler.orderDelivered
+    events:
+      - httpApi:
+          path: /order/delivered
+          method: post
+    environment:
+      region: ${aws:region}
+      OrderTableName: ordersTable
+      customerServiceQueue:
+        Ref: customerServiceQueue
+  notifyCustomerService:
+    handler: handler.notifyCustomerService
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt:
+              - customerServiceQueue
+              - Arn
+          batchSize: 1
+
+resources:
+ Resources:
+  orderEventsStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: order-events
+      ShardCount: 1
+  ordersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: ordersTable
+      AttributeDefinitions:
+        - AttributeName: "orderId"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "orderId"
+          KeyType: "HASH"
+      BillingMode: PAY_PER_REQUEST
+  deliveryServiceQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: deliveryServiceQueue
+  customerServiceQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: customerServiceQueue
