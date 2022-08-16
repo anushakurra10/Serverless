@@ -64,7 +64,7 @@ functions:
       - httpApi:
           path: /order
           method: post
-    Environment:
+    environment:
       OrderTableName:  ordersTable
       OrderStreamName: order-events
   orderFulfillment:
@@ -73,7 +73,7 @@ functions:
       - httpApi:
           path: /order/fulfill
           method: post
-    Environment:
+    environment:
       OrderTableName:  ordersTable
       OrderStreamName: order-events
   notifyExternalParties:
